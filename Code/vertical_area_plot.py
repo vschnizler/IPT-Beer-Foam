@@ -5,12 +5,12 @@ from scipy.optimize import curve_fit
 
 
 # ------------ CONFIG ------------
-csv_file = "../Data/foam_data.csv"
+csv_file = "../Data/Vertical_Data/foam_data_vertical.csv"
 time_col = 1
 y_foam_col = 4
 y_beer_col = 6
 
-jump_threshold = 0.05        # Filter threshold for |Δy|
+jump_threshold = 0.05     # Filter threshold for |Δy|
 
 plot_t_min = 0.0            # Minimum time plotted
 plot_t_max = 2522.0           # Maximum time plotted
@@ -30,9 +30,12 @@ def load_and_clean(csv):
 
     return t_vals[mask].values, foam_vals[mask].values, beer_vals[mask].values
 
+def filter_spikes_single(t, y1, threshold):
+    out =filter_spikes(t, y1, y1, threshold=threshold)
+    return out[0], out[1]
 
 
-def filter_spikes(t, y1,y2, threshold):
+def filter_spikes(t, y1, y2, threshold):
     keep = [True]  # first point always kept
     for i in range(1, len(y1)):
         if abs(y1[i] - y1[i-1] and y2[i]-y2[i-1]) > threshold:
@@ -41,6 +44,7 @@ def filter_spikes(t, y1,y2, threshold):
             keep.append(True)
     keep = np.array(keep)
     return t[keep], y1[keep], y2[keep]
+
 
 
 def exp_func(t, a, b, c):
@@ -52,37 +56,80 @@ def compute_r2(y, y_fit):
     ss_tot = np.sum((y - np.mean(y)) ** 2)
     return 1 - ss_res / ss_tot
 
+# Plot Single File
+
+def plot_beer(csv_file, show=True):
+
+    # Load + filter
+
+    t, y1, _ = load_and_clean(csv_file)
+    t, y1 = filter_spikes_single(t, y1, jump_threshold)
+
+    # Restrict plotting interval
+    mask_plot = (t >= plot_t_min) & (t <= plot_t_max)
+    t_plot = t[mask_plot]
+    y1_plot = y1[mask_plot]
+
+    log_data = np.log(y1_plot)
+
+    a, b = np.polyfit(t_plot, log_data, 1)
+
+    y_pred = np.exp(a*(t_plot) + b)
+
+    r2 = compute_r2(y1_plot, y_pred)
+
+
+    plt.figure(figsize=(8,5), dpi=120)
+    plt.scatter(t_plot, y1_plot, s=2, label="Filtered Data Foam Area " + csv_file, color="purple", marker="x")
+    plt.plot(t_plot, y_pred, color="b")
+    # plt.plot(t_fit, y_fit, linewidth=2, label="Exponential Fit")
+    plt.xlabel(r"$t \; \left[s \right]$")
+    plt.ylabel("Ratio")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    if(show):
+        plt.show()
+
+def plot_beer_multiple(files):
+    for file in files:
+        plot_beer(file, show=False)
+    plt.show()
+
+path = "../Data/Vertical_Data/"
+files = [path + "highsens.csv", path + "lowsens.csv", path + "medsens.csv", path + "uhighsens.csv", path + "vhighsens.csv"]
+plot_beer_multiple(files=files)
 
 # Load + filter
-t, y1, y2 = load_and_clean(csv_file)
-t, y1, y2 = filter_spikes(t, y1,y2, jump_threshold)
+# t, y1, y2 = load_and_clean(csv_file)
+# t, y1, y2 = filter_spikes(t, y1,y2, jump_threshold)
 
-# Restrict plotting interval
-mask_plot = (t >= plot_t_min) & (t <= plot_t_max)
-t_plot = t[mask_plot]
-y1_plot = y1[mask_plot]
-y2_plot = y2[mask_plot]
+# # Restrict plotting interval
+# mask_plot = (t >= plot_t_min) & (t <= plot_t_max)
+# t_plot = t[mask_plot]
+# y1_plot = y1[mask_plot]
+# y2_plot = y2[mask_plot]
 
-log_data = np.log(y1_plot)
+# log_data = np.log(y1_plot)
 
-a, b = np.polyfit(t_plot, log_data, 1)
+# a, b = np.polyfit(t_plot, log_data, 1)
 
-y_pred = np.exp(a*(t_plot) + b)
+# y_pred = np.exp(a*(t_plot) + b)
 
-r2 = compute_r2(y1_plot, y_pred)
+# r2 = compute_r2(y1_plot, y_pred)
 
-print("R^2 = ", r2)
+# print("R^2 = ", r2)
 
-# Plot
-plt.figure(figsize=(8,5), dpi=120)
-plt.scatter(t_plot, y1_plot, s=2, label="Filtered Data Foam Area", color="purple", marker="x")
-plt.scatter(t_plot, y2_plot, s=2, label="Filtered Data Beer Area", color="hotpink", marker="x")
-plt.plot(t_plot, y_pred, color="b")
-# plt.plot(t_fit, y_fit, linewidth=2, label="Exponential Fit")
-plt.xlabel(r"$t \; \left[s \right]$")
-plt.ylabel("Ratio")
-plt.legend()
-plt.grid(True)
-plt.tight_layout()
-plt.show()
+# # Plot
+# plt.figure(figsize=(8,5), dpi=120)
+# plt.scatter(t_plot, y1_plot, s=2, label="Filtered Data Foam Area", color="purple", marker="x")
+# plt.scatter(t_plot, y2_plot, s=2, label="Filtered Data Beer Area", color="hotpink", marker="x")
+# plt.plot(t_plot, y_pred, color="b")
+# # plt.plot(t_fit, y_fit, linewidth=2, label="Exponential Fit")
+# plt.xlabel(r"$t \; \left[s \right]$")
+# plt.ylabel("Ratio")
+# plt.legend()
+# plt.grid(True)
+# plt.tight_layout()
+# plt.show()
 
