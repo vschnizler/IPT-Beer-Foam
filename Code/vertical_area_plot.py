@@ -58,7 +58,7 @@ def compute_r2(y, y_fit):
 
 # Plot Single File
 
-def plot_beer(csv_file, show=True):
+def plot_beer(csv_file, show=True, save=False, target=None):
 
     # Load + filter
 
@@ -88,17 +88,26 @@ def plot_beer(csv_file, show=True):
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
+    if(save and target != None):
+        plt.savefig(target, dpi=1200)
+
     if(show):
         plt.show()
 
-def plot_beer_multiple(files):
-    for file in files:
-        plot_beer(file, show=False)
+def plot_beer_multiple(files, save=False, targets=None):
+
+    for file, target in zip(files, targets):
+        plot_beer(file, show=False, save=save, target=target)
+
     plt.show()
 
 path = "../Data/Vertical_Data/"
-files = [path + "highsens.csv", path + "lowsens.csv", path + "medsens.csv", path + "uhighsens.csv", path + "vhighsens.csv"]
-plot_beer_multiple(files=files)
+files = [path + "highsens.csv", path + "lowsens.csv", path + "medsens.csv", path + "uhighsens.csv", path + "vhighsens.csv", path + "uuhighsens.csv"]
+
+path = "../Plots/Vertical_Analysis/"
+targets = [path + "highsens.png", path + "lowsens.png", path + "medsens.png", path + "uhighsens.png", path + "vhighsens.png", path + "uuhighsens.png"]
+
+plot_beer_multiple(files=files, save=True, targets=targets)
 
 # Load + filter
 # t, y1, y2 = load_and_clean(csv_file)

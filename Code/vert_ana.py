@@ -451,8 +451,8 @@ if __name__ == "__main__":
     dfmed = analyze_beer_foam(video, output_csv="../Data/Vertical_Data/medsens.csv", sensitivity="medium")
     dfhigh = analyze_beer_foam(video, output_csv="../Data/Vertical_Data/highsens.csv" , sensitivity="high")
     dfvhigh = analyze_beer_foam(video, output_csv="../Data/Vertical_Data/vhighsens.csv", sensitivity="very_high")
-    dfuhigh = analyze_beer_foam(video, output_csv="../Data/Vertical_Data/uhighsens.csv", custom_threshold="140")
-    dfuuhigh = analyze_beer_foam(video, output_csv="../Data/Vertical_Data/uuhighsens.csv", custom_threshold="100")
+    dfuhigh = analyze_beer_foam(video, output_csv="../Data/Vertical_Data/uhighsens.csv", sensitivity="custom", custom_threshold=140)
+    dfuuhigh = analyze_beer_foam(video, output_csv="../Data/Vertical_Data/uuhighsens.csv", sensitivity="custom", custom_threshold=100)
     
     print("\nAnalysis complete! Data saved to CSV.")
   
