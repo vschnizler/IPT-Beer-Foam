@@ -59,7 +59,7 @@ class SingleAreaRun:
                 output_csv=self.cfg.area_csv,
                 sensitivity="custom",
                 custom_threshold=self.cfg.sensitivity,
-                show_preview=False  
+                show_preview=self.cfg.show,    
             )
         return self.run_fit()
 
@@ -204,13 +204,14 @@ class FullAreaOptimizer:
         return best_data
 
 if __name__ == "__main__":
-    conf = FoamAreaConfig(video_file="../Videos/Cropped_Vertical.MOV", save=True, study_name="Presentation_Run3.0", max_delta=0.05, filter=True)
+    conf = FoamAreaConfig(video_file="../Videos/Cropped_Vertical.MOV", save=False, show=True, study_name="Presentation_Run3.0", max_delta=0.05, filter=True, low_bnd=25000)
     
+    run = SingleAreaRun(conf)
+    run.execute_run()
     # Define Sweep Ranges
-    sensitivities = [40, 200, 10]
-    lower_bounds = [1, 30000, 40]
-    upper_bounds = [73500, 73500, 1]
+    # sensitivities = [40, 200, 10]
+    # lower_bounds = [1, 30000, 40]
+    # upper_bounds = [73500, 73500, 1]
     
-    optimizer = FullAreaOptimizer(conf)
-    optimizer.run_optimization(sensitivities, lower_bounds, upper_bounds)
-
+    # optimizer = FullAreaOptimizer(conf)
+    # optimizer.run_optimization(sensitivities, lower_bounds, upper_bounds)

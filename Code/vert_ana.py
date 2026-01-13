@@ -10,7 +10,6 @@ import pandas as pd
 import cv2
 import numpy as np
 
-# Try to import - if there are multiple classes, we'll define our own
 try:
     from beer_foam_analyzer_vertical import FoamAnalyzer
     # Check if it has the enhanced features
@@ -174,20 +173,36 @@ except (ImportError, AttributeError):
                             
                             # Convert to grayscale and threshold to get foam
                             gray_vis = cv2.cvtColor(roi_frame, cv2.COLOR_BGR2GRAY)
-                            _, thresh_vis = cv2.threshold(gray_vis, self.threshold, 255, cv2.THRESH_BINARY)
+                            _, foam_thresh = cv2.threshold(gray_vis, self.threshold, 255, cv2.THRESH_BINARY)
                             
                             # Apply glass mask if available
                             if self.glass_mask is not None:
-                                thresh_vis = cv2.bitwise_and(thresh_vis, thresh_vis, mask=self.glass_mask)
+                                foam_thresh = cv2.bitwise_and(foam_thresh, foam_thresh, mask=self.glass_mask)
                             
-                            # Find contours of foam regions
-                            foam_contours, _ = cv2.findContours(
-                                thresh_vis, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+                            # Invert to get beer (dark areas instead of bright foam)
+                            beer_thresh = cv2.bitwise_not(foam_thresh)
+                            
+                            # If glass mask exists, only show beer inside glass
+                            if self.glass_mask is not None:
+                                beer_thresh = cv2.bitwise_and(beer_thresh, beer_thresh, mask=self.glass_mask)
+                            
+                            # Find contours of beer regions (dark areas)
+                            beer_contours, _ = cv2.findContours(
+                                beer_thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
                             )
                             
-                            # Draw foam contours in RED
+                            # Draw beer contours in RED
+                            if beer_contours:
+                                cv2.drawContours(display_frame, beer_contours, -1, (0, 0, 255), 2)
+                            
+                            # Find foam contours for cyan outline
+                            foam_contours, _ = cv2.findContours(
+                                foam_thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+                            )
+                            
+                            # Draw foam contours in CYAN
                             if foam_contours:
-                                cv2.drawContours(display_frame, foam_contours, -1, (0, 0, 255), 2)
+                                cv2.drawContours(display_frame, foam_contours, -1, (255, 255, 0), 2)
                             
                             # Draw glass circle if detected (in GREEN)
                             if self.glass_mask is not None:
@@ -209,9 +224,20 @@ except (ImportError, AttributeError):
                             text1 = f"Frame: {frame_count} | Foam: {foam_pct:.1f}% | Beer: {beer_pct:.1f}%"
                             text2 = f"Ratio (F/B): {ratio:.3f}" if ratio != float('inf') else "Ratio (F/B): inf"
                             cv2.putText(display_frame, text1, (10, 30), 
-                                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
                             cv2.putText(display_frame, text2, (10, 60), 
-                                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                            
+                            # Add legend
+                            legend_y = display_frame.shape[0] - 100
+                            cv2.putText(display_frame, "Legend:", (10, legend_y),
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                            cv2.putText(display_frame, "Red = Beer", (10, legend_y + 25),
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                            cv2.putText(display_frame, "Cyan = Foam", (10, legend_y + 50),
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
+                            cv2.putText(display_frame, "Green = Glass", (10, legend_y + 75),
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
                             
                             cv2.imshow('Foam Analysis Preview', display_frame)
                             
@@ -332,127 +358,3 @@ def analyze_beer_foam(
     print(f"=" * 60)
     
     return df
-
-
-def quick_analysis(video_path: str, sensitivity: str = "medium") -> pd.DataFrame:
-    """
-    Quick analysis with minimal configuration.
-    
-    Args:
-        video_path: Path to the video file
-        sensitivity: 'low', 'medium', 'high', or 'very_high'
-    
-    Returns:
-        DataFrame with foam analysis results
-    """
-    return analyze_beer_foam(video_path, sensitivity=sensitivity)
-
-
-def batch_analyze_videos(
-    video_paths: list,
-    sensitivity: str = "medium",
-    frame_skip: int = 0,
-    output_dir: Optional[str] = None
-) -> dict:
-    """
-    Analyze multiple beer videos in batch.
-    
-    Args:
-        video_paths: List of video file paths
-        sensitivity: Foam detection sensitivity for all videos
-        frame_skip: Frames to skip for all videos
-        output_dir: Directory to save all CSV files. If None, saves in current directory
-    
-    Returns:
-        Dictionary mapping video paths to their DataFrames
-    """
-    results = {}
-    
-    for i, video_path in enumerate(video_paths, 1):
-        print(f"\n\nProcessing video {i}/{len(video_paths)}: {video_path}")
-        print("-" * 60)
-        
-        try:
-            # Generate output path
-            if output_dir:
-                Path(output_dir).mkdir(parents=True, exist_ok=True)
-                video_name = Path(video_path).stem
-                output_csv = str(Path(output_dir) / f"{video_name}_foam_data.csv")
-            else:
-                output_csv = None
-            
-            # Analyze video
-            df = analyze_beer_foam(
-                video_path=video_path,
-                output_csv=output_csv,
-                sensitivity=sensitivity,
-                frame_skip=frame_skip
-            )
-            
-            results[video_path] = df
-            
-        except Exception as e:
-            print(f"Error processing {video_path}: {e}")
-            results[video_path] = None
-    
-    return results
-
-
-# Example usage functions
-def example_basic():
-    """Example: Basic analysis"""
-    df = analyze_beer_foam(
-        video_path="beer_video.avi",
-        sensitivity="medium"
-    )
-    return df
-
-
-def example_high_sensitivity_preview():
-    """Example: High sensitivity with preview window"""
-    df = analyze_beer_foam(
-        video_path="beer_video.avi",
-        sensitivity="high",
-        show_preview=True
-    )
-    return df
-
-
-def example_custom_settings():
-    """Example: Custom settings with ROI"""
-    df = analyze_beer_foam(
-        video_path="beer_video.avi",
-        sensitivity="custom",
-        custom_threshold=150,
-        frame_skip=2,
-        roi=(100, 50, 500, 500),
-        output_csv="custom_analysis.csv"
-    )
-    return df
-
-
-def example_no_glass_detection():
-    """Example: Analyze without glass detection"""
-    df = analyze_beer_foam(
-        video_path="beer_video.avi",
-        detect_glass=False,
-        sensitivity="high"
-    )
-    return df
-
-
-
-
-if __name__ == "__main__":
-    video = "../Videos/Cropped_Vertical.MOV"
-    # Run analysis
-
-    dflow = analyze_beer_foam(video, output_csv="../Data/Vertical_Data/lowsens.csv", sensitivity="low")
-    dfmed = analyze_beer_foam(video, output_csv="../Data/Vertical_Data/medsens.csv", sensitivity="medium")
-    dfhigh = analyze_beer_foam(video, output_csv="../Data/Vertical_Data/highsens.csv" , sensitivity="high")
-    dfvhigh = analyze_beer_foam(video, output_csv="../Data/Vertical_Data/vhighsens.csv", sensitivity="very_high")
-    dfuhigh = analyze_beer_foam(video, output_csv="../Data/Vertical_Data/uhighsens.csv", sensitivity="custom", custom_threshold=140)
-    dfuuhigh = analyze_beer_foam(video, output_csv="../Data/Vertical_Data/uuhighsens.csv", sensitivity="custom", custom_threshold=100)
-    
-    print("\nAnalysis complete! Data saved to CSV.")
-  
