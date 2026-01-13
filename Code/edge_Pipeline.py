@@ -31,8 +31,9 @@ class OptimizerConfig:
     
     check_validity: bool = True
     show_results: bool = True
-    cleanup_temp: bool = True  # Fixed: Now present in config
-    
+    cleanup_temp: bool = True
+    preview: bool = False
+
     # Internal state
     _validity_checked: bool = False
 
@@ -72,7 +73,7 @@ class SingleRun:
         # 2. Edge Tracking
         analyze_edge(self.cfg.video_path, str(edge_dir), custom_threshold=ct, 
                      survival_threshold=st, size_threshold=zt, 
-                     low_bnd=self.cfg.low_bnd, high_bnd=self.cfg.high_bnd)
+                     low_bnd=self.cfg.low_bnd, high_bnd=self.cfg.high_bnd, preview=self.cfg.preview)
         
         edge_files = list(edge_dir.glob("*.csv"))
         if not edge_files:
@@ -182,37 +183,27 @@ class FoamOptimizer:
             print("\n--- Summary ---")
             print(df_res.drop(columns=['Dir']).sort_values("R2", ascending=False).head(10))
 
-@dataclass
-class OptimizerConfig:
-    study_name: str = "Test1"
-    video_path: str = "../Videos/Final_Cropped.MOV"
-    base_output_dir: str = "../Data"
-    low_bnd: int = 1200
-    high_bnd: int = 2500
-    custom_thresh_range: tuple = (100, 100, 1)
-    survival_thresh_range: tuple = (100, 1000, 5)
-    size_thresh_range: tuple = (100, 2500, 5)
-    max_k_range: tuple = (0.1, 2.5, 5)
-    check_validity: bool = False
-    show_results: bool = False
-    cleanup_temp: bool = True
     
 
 if __name__ == "__main__":
 
     cfg1 = OptimizerConfig(
-        study_name = "Test1",
+        study_name = "Test2",
         video_path= "../Videos/Final_Cropped.MOV",
         base_output_dir = "../Data",
         low_bnd = 1200,
         high_bnd = 2500,
-        custom_thresh_range = (120, 140, 3),
-        survival_thresh_range = (100, 1000, 5),
-        size_thresh_range = (100, 2500, 5),
-        max_k_range = (0.01, 0,5, 5),
+        custom_thresh_range = (120, 140, 1),
+        survival_thresh_range = (300, 1000, 1),
+        size_thresh_range = (300, 2500, 1),
+        max_k_range = (0.01, 0,5, 1),
         check_validity = False,
-        show_results = False,
-        cleanup_temp = True
+        show_results = True,
+        cleanup_temp = True,
+        preview=True
     )
-    opt1 = FoamOptimizer(cfg1)
-    opt1.run_optimization()
+    # opt1 = SingleRun(cfg1)
+    # opt1.execute(100, 400, 400, 0.05, "../Data")
+
+
+    analyze_edge(cfg1.video_path, "../Data/bla.csv", "custom", preview=True, custom_threshold=100, survival_threshold=300, size_threshold=300)
