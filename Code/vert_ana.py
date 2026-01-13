@@ -20,7 +20,7 @@ try:
         raise ImportError("FoamAnalyzer doesn't have required features")
 except (ImportError, AttributeError):
     # Define the enhanced FoamAnalyzer class here
-    # print("Warning: Using embedded FoamAnalyzer class (enhanced version)")
+    print("Warning: Using embedded FoamAnalyzer class (enhanced version)")
     
     class FoamAnalyzer:
         """Analyzes beer foam coverage in video frames."""
@@ -30,10 +30,7 @@ except (ImportError, AttributeError):
                      roi: Optional[Tuple[int, int, int, int]] = None,
                      detect_glass: bool = True,
                      min_glass_radius: int = 50,
-                     foam_sensitivity: str = "medium",
-                     low_bnd: int = 1,
-                     high_bnd:int = 15000):
-            
+                     foam_sensitivity: str = "medium"):
             self.video_path = video_path
             self.output_csv = output_csv
             self.frame_skip = frame_skip
@@ -41,8 +38,6 @@ except (ImportError, AttributeError):
             self.detect_glass = detect_glass
             self.min_glass_radius = min_glass_radius
             self.glass_mask = None
-            self.low_bnd = low_bnd
-            self.high_bnd = high_bnd
             
             # Set threshold based on sensitivity level
             sensitivity_presets = {
@@ -57,7 +52,7 @@ except (ImportError, AttributeError):
                 self.threshold = sensitivity_presets[foam_sensitivity.lower()]
                 self.foam_sensitivity = foam_sensitivity.lower()
             else:
-                # print(f"Warning: Invalid sensitivity '{foam_sensitivity}'. Using 'medium'.")
+                print(f"Warning: Invalid sensitivity '{foam_sensitivity}'. Using 'medium'.")
                 self.threshold = sensitivity_presets['medium']
                 self.foam_sensitivity = 'medium'
             
@@ -97,9 +92,9 @@ except (ImportError, AttributeError):
                     self.glass_mask = self.create_circular_mask(
                         frame.shape, (center_x, center_y), radius
                     )
-                    # print(f"Glass detected: center=({center_x}, {center_y}), radius={radius}px")
+                    print(f"Glass detected: center=({center_x}, {center_y}), radius={radius}px")
                 else:
-                    # print("Warning: Could not detect glass circle. Analyzing entire frame.")
+                    print("Warning: Could not detect glass circle. Analyzing entire frame.")
                     self.detect_glass = False
             
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -129,13 +124,13 @@ except (ImportError, AttributeError):
             fps = cap.get(cv2.CAP_PROP_FPS)
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             
-            # print(f"Video properties:")
-            # print(f"  FPS: {fps}")
-            # print(f"  Total frames: {total_frames}")
-            # print(f"  Frame skip: {self.frame_skip}")
-            # print(f"  Foam sensitivity: {self.foam_sensitivity.upper()}")
-            # print(f"  Threshold value: {self.threshold}")
-            # print(f"  Glass detection: {'ON' if self.detect_glass else 'OFF'}")
+            print(f"Video properties:")
+            print(f"  FPS: {fps}")
+            print(f"  Total frames: {total_frames}")
+            print(f"  Frame skip: {self.frame_skip}")
+            print(f"  Foam sensitivity: {self.foam_sensitivity.upper()}")
+            print(f"  Threshold value: {self.threshold}")
+            print(f"  Glass detection: {'ON' if self.detect_glass else 'OFF'}")
             
             data = {
                 'frame_number': [], 'time_seconds': [],
@@ -148,20 +143,9 @@ except (ImportError, AttributeError):
             analyzed_count = 0
             
             try:
-                if self.low_bnd > 0:
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, self.low_bnd)
-                    # print(f"Skipping to frame {self.low_bnd}...")
-
                 while cap.isOpened():
                     ret, frame = cap.read()
                     if not ret:
-                        break
-                        
-                    current_frame = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
-                    
-                    # 2. Safety Break: Stop if we exceed the high boundary
-                    if self.high_bnd is not None and current_frame > self.high_bnd:
-                        # print(f"Reached high boundary ({self.high_bnd}). Stopping.")
                         break
                     
                     if frame_count % (self.frame_skip + 1) == 0:
@@ -190,20 +174,36 @@ except (ImportError, AttributeError):
                             
                             # Convert to grayscale and threshold to get foam
                             gray_vis = cv2.cvtColor(roi_frame, cv2.COLOR_BGR2GRAY)
-                            _, thresh_vis = cv2.threshold(gray_vis, self.threshold, 255, cv2.THRESH_BINARY)
+                            _, foam_thresh = cv2.threshold(gray_vis, self.threshold, 255, cv2.THRESH_BINARY)
                             
                             # Apply glass mask if available
                             if self.glass_mask is not None:
-                                thresh_vis = cv2.bitwise_and(thresh_vis, thresh_vis, mask=self.glass_mask)
+                                foam_thresh = cv2.bitwise_and(foam_thresh, foam_thresh, mask=self.glass_mask)
                             
-                            # Find contours of foam regions
-                            foam_contours, _ = cv2.findContours(
-                                thresh_vis, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+                            # Invert to get beer (dark areas instead of bright foam)
+                            beer_thresh = cv2.bitwise_not(foam_thresh)
+                            
+                            # If glass mask exists, only show beer inside glass
+                            if self.glass_mask is not None:
+                                beer_thresh = cv2.bitwise_and(beer_thresh, beer_thresh, mask=self.glass_mask)
+                            
+                            # Find contours of beer regions (dark areas)
+                            beer_contours, _ = cv2.findContours(
+                                beer_thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
                             )
                             
-                            # Draw foam contours in RED
+                            # Draw beer contours in RED
+                            if beer_contours:
+                                cv2.drawContours(display_frame, beer_contours, -1, (0, 0, 255), 2)
+                            
+                            # Find foam contours for cyan outline
+                            foam_contours, _ = cv2.findContours(
+                                foam_thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+                            )
+                            
+                            # Draw foam contours in CYAN
                             if foam_contours:
-                                cv2.drawContours(display_frame, foam_contours, -1, (0, 0, 255), 2)
+                                cv2.drawContours(display_frame, foam_contours, -1, (255, 255, 0), 2)
                             
                             # Draw glass circle if detected (in GREEN)
                             if self.glass_mask is not None:
@@ -225,20 +225,31 @@ except (ImportError, AttributeError):
                             text1 = f"Frame: {frame_count} | Foam: {foam_pct:.1f}% | Beer: {beer_pct:.1f}%"
                             text2 = f"Ratio (F/B): {ratio:.3f}" if ratio != float('inf') else "Ratio (F/B): inf"
                             cv2.putText(display_frame, text1, (10, 30), 
-                                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
                             cv2.putText(display_frame, text2, (10, 60), 
-                                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                            
+                            # Add legend
+                            legend_y = display_frame.shape[0] - 100
+                            cv2.putText(display_frame, "Legend:", (10, legend_y),
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                            cv2.putText(display_frame, "Red = Beer", (10, legend_y + 25),
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                            cv2.putText(display_frame, "Cyan = Foam", (10, legend_y + 50),
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
+                            cv2.putText(display_frame, "Green = Glass", (10, legend_y + 75),
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
                             
                             cv2.imshow('Foam Analysis Preview', display_frame)
                             
                             # Press 'q' to quit early
                             if cv2.waitKey(1) & 0xFF == ord('q'):
-                                # print("\nAnalysis interrupted by user")
+                                print("\nAnalysis interrupted by user")
                                 break
                     
                     if frame_count % 100 == 0:
                         progress = (frame_count / total_frames) * 100
-                        # print(f"Progress: {progress:.1f}%", end='\r')
+                        print(f"Progress: {progress:.1f}%", end='\r')
                     
                     frame_count += 1
             
@@ -247,19 +258,19 @@ except (ImportError, AttributeError):
                 if show_preview:
                     cv2.destroyAllWindows()
             
-            # print(f"\nProcessing complete! Analyzed {analyzed_count} frames")
+            print(f"\nProcessing complete! Analyzed {analyzed_count} frames")
             return pd.DataFrame(data)
         
         def save_to_csv(self, df: pd.DataFrame):
             df.to_csv(self.output_csv, index=False)
-            # print(f"Data saved to: {self.output_csv}")
-            # print(f"\nSummary Statistics:")
-            # print(f"  Average foam: {df['foam_percentage'].mean():.2f}%")
-            # print(f"  Max foam: {df['foam_percentage'].max():.2f}%")
-            # print(f"  Min foam: {df['foam_percentage'].min():.2f}%")
+            print(f"Data saved to: {self.output_csv}")
+            print(f"\nSummary Statistics:")
+            print(f"  Average foam: {df['foam_percentage'].mean():.2f}%")
+            print(f"  Max foam: {df['foam_percentage'].max():.2f}%")
+            print(f"  Min foam: {df['foam_percentage'].min():.2f}%")
         
         def run(self, show_preview: bool = False):
-            # print(f"Starting foam analysis on: {self.video_path}\n")
+            print(f"Starting foam analysis on: {self.video_path}\n")
             df = self.process_video(show_preview=show_preview)
             self.save_to_csv(df)
             return df
@@ -268,15 +279,13 @@ except (ImportError, AttributeError):
 def analyze_beer_foam(
     video_path: str,
     output_csv: Optional[str] = None,
-    sensitivity: str = "custom",
+    sensitivity: str = "medium",
     frame_skip: int = 0,
     show_preview: bool = False,
     detect_glass: bool = True,
     min_glass_radius: int = 50,
     roi: Optional[Tuple[int, int, int, int]] = None,
-    custom_threshold: Optional[int] = 100,
-    low_bnd: int = 1,
-    high_bnd: int = 20000
+    custom_threshold: Optional[int] = None
 ) -> pd.DataFrame:
     """
     Analyze beer foam coverage in a video file.
@@ -339,17 +348,15 @@ def analyze_beer_foam(
         roi=roi,
         detect_glass=detect_glass,
         min_glass_radius=min_glass_radius,
-        foam_sensitivity=sensitivity,
-        low_bnd=low_bnd,
-        high_bnd=high_bnd
+        foam_sensitivity=sensitivity
     )
     
     # Run analysis
-    # print(f"=" * 60)
-    # print(f"BEER FOAM ANALYSIS")
-    # print(f"=" * 60)
+    print(f"=" * 60)
+    print(f"BEER FOAM ANALYSIS")
+    print(f"=" * 60)
     df = analyzer.run(show_preview=show_preview)
-    # print(f"=" * 60)
+    print(f"=" * 60)
     
     return df
 
@@ -380,28 +387,78 @@ def analyze_edge(
     custom_threshold: Optional[int] = None,
     edge_type: str = "inner",
     survival_threshold: int = 1,
-    tracking_distance: float = 50.0,
-    size_threshold: float = 100.0,
-    low_bnd: int = 0,
-    high_bnd: Optional[int] = None
+    tracking_distance: float = 5.0,
+    size_threshold: float = 100.0
 ) -> dict:
     """
-    Analyze the edge of beer foam and extract coordinates within a specific frame interval.
+    Analyze the edge/perimeter of beer foam and extract edge coordinates.
+    
+    This function detects the foam region and traces its edge, recording the x,y 
+    coordinates of points along the foam-beer boundary. Each connected edge is tracked
+    across frames and saved to a separate CSV file in the target folder.
+    
+    Args:
+        video_path: Path to the input video file
+        target: Path to output FOLDER where edge CSV files will be saved
+        sensitivity: Foam detection sensitivity - options:
+                    'low', 'medium', 'high', 'very_high', or 'custom'
+        step_sens: Step length for edge sampling. Lower values = more points along edge.
+                   Controls contour approximation epsilon (default: 1.0)
+        detect_glass: If True, automatically detects and excludes glass boundary
+        min_glass_radius: Minimum radius for glass detection in pixels
+        frame_skip: Number of frames to skip between analyses
+        preview: If True, displays preview window showing the frame and detected edge points
+        custom_threshold: Custom brightness threshold (0-255). Only used when sensitivity='custom'
+        edge_type: Type of edge to detect - 'inner' (foam-beer boundary), 'outer' (foam exterior), 
+                   or 'both' (all edges)
+        survival_threshold: Minimum number of frames a contour must be tracked to be saved (default: 1)
+        tracking_distance: Maximum distance (pixels) between contour centers to consider them the same
+                          across frames (default: 50.0)
+        size_threshold: Minimum contour area (pixels²) to track. Contours smaller than this are ignored
+                       (default: 100.0)
+    
+    Returns:
+        Dictionary mapping contour indices to their DataFrames
+        Each DataFrame contains: frame_number, time_seconds, point_index, x, y, distance_from_center, edge_type
+    
+    Example:
+        # Only track edges larger than 500 pixels² and lasting 10+ frames
+        dfs = analyze_edge(
+            video_path="beer.avi",
+            target="../Data/foam_edges/",
+            sensitivity="high",
+            edge_type="inner",
+            survival_threshold=10,
+            tracking_distance=30.0,
+            size_threshold=500.0,  # Ignore small contours
+            preview=True
+        )
     """
-    # Validate inputs and setup paths
+    
+    # Validate inputs
     if not Path(video_path).exists():
         raise FileNotFoundError(f"Video file not found: {video_path}")
     
+    # Create target folder if it doesn't exist
     target_path = Path(target)
     target_path.mkdir(parents=True, exist_ok=True)
+    print(f"Output folder: {target_path.absolute()}")
     
-    # Determine brightness threshold
+    # Sensitivity thresholds
     sensitivity_presets = {
-        'low': 220, 'medium': 200, 'high': 180, 'very_high': 160,
+        'low': 220,
+        'medium': 200,
+        'high': 180,
+        'very_high': 160,
         'custom': custom_threshold if custom_threshold is not None else 200
     }
     threshold = sensitivity_presets.get(sensitivity.lower(), 200)
     
+    if sensitivity.lower() == 'custom' and custom_threshold is None:
+        print("Warning: sensitivity='custom' but no custom_threshold provided. Using 200.")
+        threshold = 200
+    
+    # Open video
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise IOError(f"Cannot open video file: {video_path}")
@@ -409,141 +466,348 @@ def analyze_edge(
     fps = cap.get(cv2.CAP_PROP_FPS)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     
-    # 1. Fast-forward to the start interval
-    if low_bnd > 0:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, low_bnd)
-        # print(f"Skipping to frame {low_bnd}...")
-
-    # print(f"=" * 60)
-    # print(f"FOAM EDGE ANALYSIS")
-    # print(f"Interval: {low_bnd} to {high_bnd if high_bnd else total_frames}")
-    # print(f"=" * 60)
+    print(f"=" * 60)
+    print(f"FOAM EDGE ANALYSIS (with contour tracking)")
+    print(f"=" * 60)
+    print(f"Video: {video_path}")
+    print(f"FPS: {fps}")
+    print(f"Total frames: {total_frames}")
+    print(f"Sensitivity: {sensitivity.upper()} (threshold={threshold})")
+    print(f"Step sensitivity: {step_sens}")
+    print(f"Glass detection: {'ON' if detect_glass else 'OFF'}")
+    print(f"Edge type: {edge_type.upper()}")
+    print(f"Survival threshold: {survival_threshold} frames")
+    print(f"Tracking distance: {tracking_distance} pixels")
+    print(f"Size threshold: {size_threshold} pixels²")
+    print(f"Preview: {'ON' if preview else 'OFF'}")
+    print()
     
-    contour_data = {}  
-    tracked_contours = []  
+    # Data storage - dictionary of lists for each tracked contour
+    contour_data = {}  # Key: contour_track_id, Value: dict of lists
+    
+    # Tracking state
+    tracked_contours = []  # List of dicts: {'id': int, 'center': (x,y), 'last_seen': frame_num}
     next_track_id = 0
-    glass_mask = None
+    
+    frame_count = 0
     glass_center = None
     glass_radius = None
-
+    glass_mask = None
+    
     try:
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
             
-            # Use actual video frame index for accurate boundary checking
-            current_frame = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
-            
-            # Check if we have exceeded the high boundary
-            if high_bnd is not None and current_frame > high_bnd:
-                # print(f"\nReached high boundary ({high_bnd}). Stopping.")
-                break
-
-            # Only analyze frames at specified intervals relative to the start
-            if (current_frame - low_bnd) % (frame_skip + 1) == 0:
-                time_sec = current_frame / fps if fps > 0 else 0
+            # Only analyze frames at specified intervals
+            if frame_count % (frame_skip + 1) == 0:
+                time_sec = frame_count / fps if fps > 0 else 0
                 
-                # Glass detection on the first analyzed frame
+                # Detect glass on first frame
                 if detect_glass and glass_mask is None:
-                    gray_glass = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                    blurred = cv2.GaussianBlur(gray_glass, (9, 9), 2)
+                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                    blurred = cv2.GaussianBlur(gray, (9, 9), 2)
                     circles = cv2.HoughCircles(
                         blurred, cv2.HOUGH_GRADIENT, dp=1, minDist=100,
-                        param1=50, param2=30, minRadius=min_glass_radius,
+                        param1=50, param2=30,
+                        minRadius=min_glass_radius,
                         maxRadius=min(frame.shape[0], frame.shape[1]) // 2
                     )
+                    
                     if circles is not None:
                         circles = np.uint16(np.around(circles))
                         glass_center = (int(circles[0][0][0]), int(circles[0][0][1]))
                         glass_radius = int(circles[0][0][2])
+                        
+                        # Create glass mask
                         glass_mask = np.zeros(frame.shape[:2], dtype=np.uint8)
                         cv2.circle(glass_mask, glass_center, glass_radius, 1, -1)
-                        # print(f"Glass detected at frame {current_frame}: center={glass_center}, radius={glass_radius}px")
-
-                # Thresholding and contour finding
+                        
+                        print(f"Glass detected: center={glass_center}, radius={glass_radius}px")
+                    else:
+                        print("Warning: Could not detect glass. Analyzing entire frame.")
+                        detect_glass = False
+                
+                # Convert to grayscale and threshold for foam
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 _, foam_thresh = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY)
+                
+                # Apply glass mask if available (analyze only inside glass)
                 if glass_mask is not None:
                     foam_thresh = cv2.bitwise_and(foam_thresh, foam_thresh, mask=glass_mask)
                 
-                contours, hierarchy = cv2.findContours(foam_thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+                # Find contours of foam (RETR_TREE to get hierarchy)
+                contours, hierarchy = cv2.findContours(
+                    foam_thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
+                )
                 
-                current_detections = []
+                # Current frame detections
+                current_detections = []  # List of dicts: {'contour': array, 'center': (x,y), 'is_inner': bool}
+                inner_contours = []
+                outer_contours = []
+                
                 if hierarchy is not None and len(contours) > 0:
-                    hierarchy = hierarchy[0]
+                    hierarchy = hierarchy[0]  # Remove extra dimension
+                    
                     for i, contour in enumerate(contours):
-                        if cv2.contourArea(contour) < size_threshold:
+                        # Calculate contour area
+                        area = cv2.contourArea(contour)
+                        
+                        # Skip contours smaller than size threshold
+                        if area < size_threshold:
                             continue
                         
+                        # Determine if this is an inner or outer contour
                         parent_idx = hierarchy[i][3]
                         is_inner = parent_idx != -1
                         is_outer = parent_idx == -1
                         
-                        if (edge_type == "inner" and not is_inner) or (edge_type == "outer" and not is_outer):
+                        # Store contours by type for visualization
+                        if is_inner:
+                            inner_contours.append(contour)
+                        if is_outer:
+                            outer_contours.append(contour)
+                        
+                        # Only process if matching requested edge_type
+                        if (edge_type == "inner" and not is_inner) or \
+                           (edge_type == "outer" and not is_outer):
                             continue
                         
+                        # Calculate contour center for tracking
                         M = cv2.moments(contour)
-                        cx = int(M['m10'] / M['m00']) if M['m00'] != 0 else 0
-                        cy = int(M['m01'] / M['m00']) if M['m00'] != 0 else 0
-                        current_detections.append({'contour': contour, 'center': (cx, cy), 'is_inner': is_inner})
-
-                # Tracking Logic
+                        if M['m00'] != 0:
+                            cx = int(M['m10'] / M['m00'])
+                            cy = int(M['m01'] / M['m00'])
+                            center = (cx, cy)
+                        else:
+                            # Fallback to bounding box center
+                            x, y, w, h = cv2.boundingRect(contour)
+                            center = (x + w // 2, y + h // 2)
+                        
+                        current_detections.append({
+                            'contour': contour,
+                            'center': center,
+                            'is_inner': is_inner
+                        })
+                
+                # Match current detections to tracked contours
                 matched_tracks = set()
-                for det in current_detections:
-                    det_center = det['center']
-                    best_match_idx = None
-                    min_dist = tracking_distance
+                matched_detections = set()
+                
+                for det_idx, detection in enumerate(current_detections):
+                    det_center = detection['center']
+                    best_match_id = None
+                    best_distance = float('inf')
                     
-                    for i, track in enumerate(tracked_contours):
-                        if i in matched_tracks: continue
-                        dist = np.sqrt((det_center[0]-track['center'][0])**2 + (det_center[1]-track['center'][1])**2)
-                        if dist < min_dist:
-                            min_dist = dist
-                            best_match_idx = i
+                    # Find closest tracked contour
+                    for track_idx, track in enumerate(tracked_contours):
+                        if track_idx in matched_tracks:
+                            continue
+                        
+                        # Calculate distance between centers
+                        track_center = track['center']
+                        dist = np.sqrt((det_center[0] - track_center[0])**2 + 
+                                      (det_center[1] - track_center[1])**2)
+                        
+                        if dist < tracking_distance and dist < best_distance:
+                            best_distance = dist
+                            best_match_id = track['id']
+                            best_match_idx = track_idx
                     
-                    if best_match_idx is not None:
-                        track_id = tracked_contours[best_match_idx]['id']
+                    # Assign track ID
+                    if best_match_id is not None:
+                        # Match found - use existing track ID
+                        track_id = best_match_id
                         matched_tracks.add(best_match_idx)
-                        tracked_contours[best_match_idx].update({'center': det_center, 'last_seen': current_frame})
+                        matched_detections.add(det_idx)
+                        # Update track
+                        tracked_contours[best_match_idx]['center'] = det_center
+                        tracked_contours[best_match_idx]['last_seen'] = frame_count
                     else:
+                        # No match - create new track
                         track_id = next_track_id
                         next_track_id += 1
-                        tracked_contours.append({'id': track_id, 'center': det_center, 'last_seen': current_frame})
+                        tracked_contours.append({
+                            'id': track_id,
+                            'center': det_center,
+                            'last_seen': frame_count
+                        })
+                        matched_detections.add(det_idx)
                     
-                    # Store Points
+                    # Store contour data
+                    contour = detection['contour']
+                    is_inner = detection['is_inner']
+                    
+                    # Initialize data storage for this track if needed
                     if track_id not in contour_data:
-                        contour_data[track_id] = {k: [] for k in ['frame_number', 'time_seconds', 'point_index', 'x', 'y', 'distance_from_center', 'edge_type']}
+                        contour_data[track_id] = {
+                            'frame_number': [],
+                            'time_seconds': [],
+                            'point_index': [],
+                            'x': [],
+                            'y': [],
+                            'distance_from_center': [],
+                            'edge_type': []
+                        }
                     
-                    epsilon = step_sens * cv2.arcLength(det['contour'], True) / 100
-                    approx = cv2.approxPolyDP(det['contour'], epsilon, True)
-                    for idx, pt in enumerate(approx):
-                        px, py = pt[0]
-                        dist_center = np.sqrt((px-glass_center[0])**2 + (py-glass_center[1])**2) if glass_center else 0
-                        if glass_radius and abs(dist_center - glass_radius) < 5: continue
+                    # Approximate contour based on step_sens
+                    epsilon = step_sens * cv2.arcLength(contour, True) / 100
+                    approx_contour = cv2.approxPolyDP(contour, epsilon, True)
+                    
+                    # Extract edge points for this contour
+                    point_idx = 0
+                    for point in approx_contour:
+                        x, y = point[0]
                         
-                        contour_data[track_id]['frame_number'].append(current_frame)
+                        # Skip points on glass edge (if glass detected)
+                        if glass_center and glass_radius:
+                            dist_to_center = np.sqrt(
+                                (x - glass_center[0])**2 + (y - glass_center[1])**2
+                            )
+                            
+                            # Skip if point is on glass boundary (within tolerance)
+                            if abs(dist_to_center - glass_radius) < 5:
+                                continue
+                        else:
+                            dist_to_center = 0
+                        
+                        # Store edge point in this track's data
+                        contour_data[track_id]['frame_number'].append(frame_count)
                         contour_data[track_id]['time_seconds'].append(time_sec)
-                        contour_data[track_id]['point_index'].append(idx)
-                        contour_data[track_id]['x'].append(int(px))
-                        contour_data[track_id]['y'].append(int(py))
-                        contour_data[track_id]['distance_from_center'].append(float(dist_center))
-                        contour_data[track_id]['edge_type'].append('inner' if det['is_inner'] else 'outer')
-
-                tracked_contours = [t for t in tracked_contours if current_frame - t['last_seen'] < 10]
-
+                        contour_data[track_id]['point_index'].append(point_idx)
+                        contour_data[track_id]['x'].append(int(x))
+                        contour_data[track_id]['y'].append(int(y))
+                        contour_data[track_id]['distance_from_center'].append(float(dist_to_center))
+                        contour_data[track_id]['edge_type'].append('inner' if is_inner else 'outer')
+                        
+                        point_idx += 1
+                
+                # Remove old tracks that haven't been seen recently (more than 10 frames)
+                tracked_contours = [t for t in tracked_contours 
+                                   if frame_count - t['last_seen'] < 10]
+                
+                # Show preview if requested
                 if preview:
-                    cv2.imshow('Foam Edge Analysis Preview', frame)
-                    if cv2.waitKey(1) & 0xFF == ord('q'): break
+                    display_frame = frame.copy()
+                    
+                    # Draw inner edges in RED (foam surrounding beer)
+                    if inner_contours and edge_type in ["inner", "both"]:
+                        for contour in inner_contours:
+                            epsilon = step_sens * cv2.arcLength(contour, True) / 100
+                            approx = cv2.approxPolyDP(contour, epsilon, True)
+                            cv2.drawContours(display_frame, [approx], -1, (0, 0, 255), 3)
+                            
+                            # Draw edge points as circles in RED
+                            for point in approx:
+                                x, y = point[0]
+                                if glass_center and glass_radius:
+                                    dist = np.sqrt((x - glass_center[0])**2 + (y - glass_center[1])**2)
+                                    if abs(dist - glass_radius) < 5:
+                                        continue
+                                cv2.circle(display_frame, (int(x), int(y)), 5, (0, 0, 255), -1)
+                    
+                    # Draw outer edges in CYAN (outer foam boundary)
+                    if outer_contours and edge_type in ["outer", "both"]:
+                        for contour in outer_contours:
+                            epsilon = step_sens * cv2.arcLength(contour, True) / 100
+                            approx = cv2.approxPolyDP(contour, epsilon, True)
+                            cv2.drawContours(display_frame, [approx], -1, (255, 255, 0), 2)
+                            
+                            # Draw edge points as circles in CYAN
+                            for point in approx:
+                                x, y = point[0]
+                                if glass_center and glass_radius:
+                                    dist = np.sqrt((x - glass_center[0])**2 + (y - glass_center[1])**2)
+                                    if abs(dist - glass_radius) < 5:
+                                        continue
+                                cv2.circle(display_frame, (int(x), int(y)), 4, (255, 255, 0), -1)
+                    
+                    # Draw tracked contour centers and IDs
+                    for track in tracked_contours:
+                        cx, cy = track['center']
+                        track_id = track['id']
+                        cv2.circle(display_frame, (cx, cy), 8, (255, 0, 255), -1)
+                        cv2.putText(display_frame, f"ID:{track_id}", (cx + 10, cy - 10),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)
+                    
+                    # Draw glass circle in GREEN
+                    if glass_center and glass_radius:
+                        cv2.circle(display_frame, glass_center, glass_radius, (0, 255, 0), 2)
+                        cv2.circle(display_frame, glass_center, 5, (0, 255, 0), -1)
+                    
+                    # Add text overlay
+                    text1 = f"Frame: {frame_count} | Tracked: {len(tracked_contours)} | Total IDs: {next_track_id}"
+                    text2 = f"Step: {step_sens} | Sens: {sensitivity} | Size: {size_threshold:.0f}px²"
+                    text3 = f"Time: {time_sec:.2f}s | Inner: {len(inner_contours)} | Outer: {len(outer_contours)}"
+                    cv2.putText(display_frame, text1, (10, 30),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                    cv2.putText(display_frame, text2, (10, 55),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                    cv2.putText(display_frame, text3, (10, 80),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                    
+                    # Add legend
+                    legend_y = display_frame.shape[0] - 140
+                    cv2.putText(display_frame, "Legend:", (10, legend_y),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                    if edge_type in ["inner", "both"]:
+                        cv2.circle(display_frame, (20, legend_y + 25), 5, (0, 0, 255), -1)
+                        cv2.putText(display_frame, "Inner edge (foam-beer)", (35, legend_y + 30),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                    if edge_type in ["outer", "both"]:
+                        cv2.circle(display_frame, (20, legend_y + 50), 4, (255, 255, 0), -1)
+                        cv2.putText(display_frame, "Outer edge (foam exterior)", (35, legend_y + 55),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                    cv2.circle(display_frame, (20, legend_y + 75), 8, (255, 0, 255), -1)
+                    cv2.putText(display_frame, "Tracked center + ID", (35, legend_y + 80),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                    cv2.putText(display_frame, "Glass boundary", (35, legend_y + 105),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                    cv2.putText(display_frame, "Press 'q' to quit, SPACE to pause", (35, legend_y + 130),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                    
+                    cv2.imshow('Foam Edge Analysis Preview', display_frame)
+                    
+                    # Press 'q' to quit, 'space' to pause
+                    key = cv2.waitKey(1) & 0xFF
+                    if key == ord('q'):
+                        print("\nAnalysis interrupted by user")
+                        break
+                    elif key == ord(' '):
+                        print("\nPaused - Press any key to continue, 'q' to quit")
+                        while True:
+                            key2 = cv2.waitKey(0) & 0xFF
+                            if key2 == ord('q'):
+                                print("Analysis interrupted by user")
+                                cap.release()
+                                cv2.destroyAllWindows()
+                                # Save what we have so far
+                                result_dfs = _save_contour_data(contour_data, target_path, survival_threshold)
+                                return result_dfs
+                            else:
+                                break
             
-          #  if current_frame % 100 == 0:
-                # print(f"Progress: {(current_frame/total_frames)*100:.1f}% | Frame: {current_frame}", end='\r')
-
+            # Progress update
+            if frame_count % 100 == 0:
+                progress = (frame_count / total_frames) * 100
+                print(f"Progress: {progress:.1f}% | Active tracks: {len(tracked_contours)}", end='\r')
+            
+            frame_count += 1
+    
     finally:
         cap.release()
-        if preview: cv2.destroyAllWindows()
+        if preview:
+            cv2.destroyAllWindows()
     
-    return _save_contour_data(contour_data, target_path, survival_threshold)
+    print(f"\nProcessing complete!")
+    print(f"Total frames analyzed: {frame_count // (frame_skip + 1)}")
+    print(f"Total unique tracks created: {next_track_id}")
+    
+    # Save each contour to separate CSV file (only if they meet survival threshold)
+    result_dfs = _save_contour_data(contour_data, target_path, survival_threshold)
+    
+    return result_dfs
 
 
 def _save_contour_data(contour_data: dict, target_path: Path, survival_threshold: int = 1) -> dict:
@@ -563,7 +827,7 @@ def _save_contour_data(contour_data: dict, target_path: Path, survival_threshold
     filtered_count = 0
     saved_count = 0
     
-    # print(f"\nSaving contours to CSV files (survival threshold: {survival_threshold} frames)...")
+    print(f"\nSaving contours to CSV files (survival threshold: {survival_threshold} frames)...")
     
     for contour_idx, data in contour_data.items():
         # Skip empty contours
@@ -588,20 +852,20 @@ def _save_contour_data(contour_data: dict, target_path: Path, survival_threshold
         result_dfs[contour_idx] = df
         saved_count += 1
         
-        # print(f"  Saved contour {contour_idx}: {len(df)} points across {unique_frames} frames -> {csv_filename.name}")
+        print(f"  Saved contour {contour_idx}: {len(df)} points across {unique_frames} frames -> {csv_filename.name}")
     
-    # print(f"\nSummary:")
-    # print(f"  Total contours analyzed: {len(contour_data)}")
-    # print(f"  Contours saved: {saved_count}")
-    # print(f"  Contours filtered out: {filtered_count} (< {survival_threshold} frames)")
-    # print(f"  Output folder: {target_path.absolute()}")
+    print(f"\nSummary:")
+    print(f"  Total contours analyzed: {len(contour_data)}")
+    print(f"  Contours saved: {saved_count}")
+    print(f"  Contours filtered out: {filtered_count} (< {survival_threshold} frames)")
+    print(f"  Output folder: {target_path.absolute()}")
     
     if len(result_dfs) > 0:
         total_points = sum(len(df) for df in result_dfs.values())
         avg_frames = sum(df['frame_number'].nunique() for df in result_dfs.values()) / len(result_dfs)
-        # print(f"  Total edge points: {total_points}")
-        # print(f"  Average points per contour: {total_points / len(result_dfs):.1f}")
-        # print(f"  Average frames per contour: {avg_frames:.1f}")
+        print(f"  Total edge points: {total_points}")
+        print(f"  Average points per contour: {total_points / len(result_dfs):.1f}")
+        print(f"  Average frames per contour: {avg_frames:.1f}")
     
     return result_dfs
 
@@ -627,8 +891,8 @@ def batch_analyze_videos(
     results = {}
     
     for i, video_path in enumerate(video_paths, 1):
-        # print(f"\n\nProcessing video {i}/{len(video_paths)}: {video_path}")
-        # print("-" * 60)
+        print(f"\n\nProcessing video {i}/{len(video_paths)}: {video_path}")
+        print("-" * 60)
         
         try:
             # Generate output path
@@ -650,7 +914,7 @@ def batch_analyze_videos(
             results[video_path] = df
             
         except Exception as e:
-            # print(f"Error processing {video_path}: {e}")
+            print(f"Error processing {video_path}: {e}")
             results[video_path] = None
     
     return results
